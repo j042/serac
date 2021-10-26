@@ -88,6 +88,22 @@ constexpr auto make_dual_helper(const tensor<T, n...>& arg, std::integer_sequenc
   return arg_dual;
 }
 
+// promote a tensor of values to a dual tensor representation that keeps track of
+// derivatives w.r.t. more than 1 argument. It is assumed that 'arg' itself corresponds
+// to the 'j'th argument. This function is not intended to be called outside of make_dual.
+template <int I, typename ... T, int... i>
+constexpr auto make_dual_helper(const serac::tuple < T ... >& arg, std::integer_sequence<int, i ... >)
+{
+  auto J = std::make_integer_sequence< int, 
+  using gradient_type = serac::tuple<std::conditional_t<i == I, serac::tuple< T ... >, zero> ... >;
+  serac::tuple < dual < gradient_type > > arg_dual{};
+  for_constexpr<n...>([&](auto... j) {
+    arg_dual(j...).value                         = arg(j...);
+    serac::get<I>(arg_dual(j...).gradient)(j...) = 1.0;
+  });
+  return arg_dual;
+}
+
 // promote a tuple of values to a tuple of dual value representations that keeps track of
 // derivatives w.r.t. each tuple entry.
 template <typename... T, int... i>
