@@ -312,6 +312,115 @@ TYPED_TEST(QuadratureDataStateManagerTest, basic_integrals_state_manager)
   }
 }
 
+class QuadratureDataTest3D : public ::testing::Test {
+protected:
+  void SetUp() override
+  {
+    constexpr auto mesh_file = SERAC_REPO_DIR "/data/meshes/twohex.mesh";
+    default_mesh             = mesh::refineAndDistribute(buildMeshFromFile(mesh_file), 0, 0);
+    resetWithNewMesh(*default_mesh);
+  }
+
+  void resetWithNewMesh(mfem::ParMesh& new_mesh)
+  {
+    mesh                = &new_mesh;
+    festate             = std::make_unique<FiniteElementState>(*mesh);
+    festate->gridFunc() = 0.0;
+    residual            = std::make_unique<Functional<test_space(trial_space)>>(&festate->space(), &festate->space());
+  }
+  static constexpr int p   = 1;
+  static constexpr int dim = 3;
+  using test_space         = H1<p, dim>;
+  using trial_space        = H1<p, dim>;
+  std::unique_ptr<mfem::ParMesh>                       default_mesh;
+  mfem::ParMesh*                                       mesh = nullptr;
+  std::unique_ptr<FiniteElementState>                  festate;
+  std::unique_ptr<Functional<test_space(trial_space)>> residual;
+};
+
+/**
+ * @brief a 3D constitutive model for a J2 material with linear isotropic and kinematic hardening.
+ */
+struct J2 {
+  double E;        ///< Young's modulus
+  double nu;       ///< Poisson's ratio
+  double Hi;       ///< isotropic hardening constant
+  double Hk;       ///< kinematic hardening constant
+  double sigma_y;  ///< yield stress
+
+  static constexpr auto I = Identity<3>();
+
+  /** @brief variables describing the stress state, yield surface, and some information about the most recent stress
+   * increment */
+  struct State {
+    tensor<double, 3, 3> beta;           ///< back-stress tensor
+    tensor<double, 3, 3> el_strain;      ///< elastic strain
+    double               pl_strain;      ///< plastic strain
+    double               pl_strain_inc;  ///< incremental plastic strain
+    double               q;              ///< (trial) J2 stress
+  };
+
+  /** @brief calculate the Cauchy stress, given the displacement gradient and previous material state */
+  template <typename T>
+  auto calculate_stress_AD(const T grad_u, State& state) const
+  {
+    const double K = E / (3.0 * (1.0 - 2.0 * nu));
+    const double G = 0.5 * E / (1.0 + nu);
+
+    //
+    // see pg. 260, box 7.5,
+    // in "Computational Methods for Plasticity"
+    //
+
+    // (i) elastic predictor
+    auto el_strain = sym(grad_u);
+    auto p         = K * tr(el_strain);
+    auto s         = 2.0 * G * dev(el_strain);
+    auto eta       = s - state.beta;
+    auto q         = sqrt(3.0 / 2.0) * norm(eta);
+    auto phi       = q - (sigma_y + Hi * state.pl_strain);
+
+    // (ii) admissibility
+    if (phi > 0.0) {
+      // see (7.207) on pg. 261
+      auto plastic_strain_inc = phi / (3 * G + Hk + Hi);
+
+      // (iii) return mapping
+      s = s - sqrt(6.0) * G * plastic_strain_inc * normalize(eta);
+
+      state.pl_strain = state.pl_strain + get_value(plastic_strain_inc);
+
+      state.beta = state.beta + sqrt(2.0 / 3.0) * Hk * get_value(plastic_strain_inc) * normalize(get_value(eta));
+    }
+
+    return s + p * I;
+  }
+};
+
+TEST_F(QuadratureDataTest3D, j2_plasticity)
+{
+  QuadratureData<J2::State> qdata(*mesh, p);
+
+  J2 material{
+      100,   // Young's modulus
+      0.25,  // Poisson's ratio
+      1.0,   // isotropic hardening constant
+      2.3,   // kinematic hardening constant
+      300.0  // yield stress
+  };
+
+  residual->AddDomainIntegral(
+      Dimension<dim>{},
+      [&](auto /* x */, auto displacement, auto& state) {
+        auto [u, du_dx] = displacement;
+        auto stress = material.calculate_stress_AD(du_dx, state);
+        return serac::tuple{u, stress};
+      },
+      *mesh, qdata);
+
+
+}
+
 //------------------------------------------------------------------------------
 #include "axom/slic/core/SimpleLogger.hpp"
 
