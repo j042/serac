@@ -460,6 +460,38 @@ public:
     trial_space_[which]->GetEssentialTrueDofs(ess_attr, ess_tdof_list_);
   }
 
+  void inspect() {
+
+    input_E_[0].Print(std::cout); 
+    output_E_.Print(std::cout);
+
+    mfem::Vector output_E_2 = output_E_;
+    output_E_2 *= 0;
+
+    auto& K_elem = element_gradients_[0];
+    std::cout << K_elem.shape()[0] << " " << K_elem.shape()[1] << " " << K_elem.shape()[2] << std::endl;
+    //for (axom::IndexType e = 0; e < K_elem.shape()[0]; e++) {
+    //  for (axom::IndexType i = 0; i < K_elem.shape()[1]; i++) {
+    //    for (axom::IndexType j = 0; j < K_elem.shape()[2]; j++) {
+    //      std::cout << K_elem(e, i, j) << " ";
+    //    }
+    //    std::cout << std::endl;
+    //  }
+    //  std::cout << std::endl;
+    //}
+
+    for (axom::IndexType i = 0; i < K_elem.shape()[1]; i++) {
+      for (axom::IndexType j = 0; j < K_elem.shape()[2]; j++) {
+        output_E_2[i] += K_elem(0, i, j) * input_E_[0][j];
+      }
+    }
+
+    output_E_2 -= output_E_;
+    
+    std::cout << "evector output error: " << output_E_2.Norml2() << std::endl;
+
+  }
+
 private:
   /**
    * @brief mfem::Operator representing the gradient matrix that
@@ -561,6 +593,15 @@ private:
           mfem::SparseMatrix(lookup_tables.row_ptr.data(), lookup_tables.col_ind.data(), values, form_.output_L_.Size(),
                              form_.input_L_[which_argument].Size(), sparse_matrix_frees_graph_ptrs,
                              sparse_matrix_frees_values_ptr, col_ind_is_sorted);
+
+      J_local.Print(std::cout);
+      //for (int i = 0; i < 54; i++) {
+      //  for (int j = 0; j < 54; j++) {
+      //    std::cout << J_local(i, j) << " ";
+      //  }
+      //  std::cout << '\n';
+      //}
+      //std::cout << std::endl;
 
       auto* R = form_.test_space_->Dof_TrueDof_Matrix();
 
