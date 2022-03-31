@@ -20,6 +20,7 @@
 #include "serac/numerics/functional/functional.hpp"
 #include "serac/physics/state/state_manager.hpp"
 #include "serac/physics/solid.hpp"
+#include "serac/physics/materials/solid_utils.hpp"
 #include "serac/physics/materials/functional_material_utils.hpp"
 
 namespace serac {
@@ -255,13 +256,14 @@ public:
    * @brief Set the material stress response and mass properties for the physics module
    *
    * @tparam MaterialType The solid material type
+   * @tparam shape_index An optional index for the shape displacement parameter
    * @param material A material containing density and stress evaluation information
    *
    * @pre MaterialType must have a method density() defining the density
    * @pre MaterialType must have the operator (du_dX) defined as the Kirchoff stress
    */
-  template <typename MaterialType>
-  void setMaterial(MaterialType material)
+  template <typename MaterialType, int shape_index = -1>
+  void setMaterial(MaterialType material, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<MaterialType>::value) {
       static_assert(material.numParameters() == sizeof...(parameter_space),
@@ -269,22 +271,27 @@ public:
                     "solid material.");
     }
 
+    static_assert(shape_index >= -1,
+                  "The shape index must be either -1 or a valid index of the user-specified parameter list 1");
+
     auto parameterized_material = parameterizeMaterial(material);
 
     K_functional_->AddDomainIntegral(
         Dimension<dim>{},
         [this, parameterized_material](auto x, auto displacement, auto... params) {
           // Get the value and the gradient from the input tuple
-          auto [u, du_dX] = displacement;
+
+          auto [modified_u, modified_du_dX] =
+              serac::solid_util::adjustDisplacementWithShape<shape_index>(displacement, params...);
 
           auto source = zero{};
 
-          auto response = parameterized_material(x, u, du_dX, serac::get<0>(params)...);
+          auto response = parameterized_material(x, modified_u, modified_du_dX, serac::get<0>(params)...);
 
           auto flux = response.stress;
 
           if (geom_nonlin_ == GeometricNonlinearities::On) {
-            auto deformation_grad = du_dX + I_;
+            auto deformation_grad = modified_du_dX + I_;
             flux                  = flux * inv(transpose(deformation_grad));
           }
 
@@ -295,16 +302,17 @@ public:
     M_functional_->AddDomainIntegral(
         Dimension<dim>{},
         [this, parameterized_material](auto x, auto displacement, auto... params) {
-          auto [u, du_dX] = displacement;
+          auto [modified_u, modified_du_dX] =
+              serac::solid_util::adjustDisplacementWithShape<shape_index>(displacement, params...);
 
-          auto response = parameterized_material(x, u, du_dX, serac::get<0>(params)...);
+          auto response = parameterized_material(x, modified_u, modified_du_dX, serac::get<0>(params)...);
 
-          auto flux = 0.0 * du_dX;
+          auto flux = 0.0 * modified_du_dX;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
-          auto deformation_grad = du_dX + I_;
-          auto source           = response.density * u * (1.0 + geom_factor * (det(deformation_grad) - 1.0));
+          auto deformation_grad = modified_du_dX + I_;
+          auto source           = response.density * modified_u * (1.0 + geom_factor * (det(deformation_grad) - 1.0));
 
           return serac::tuple{source, flux};
         },
@@ -345,8 +353,8 @@ public:
    *
    * @pre BodyForceType must have the operator (x, time, displacement, d displacement_dx) defined as the body force
    */
-  template <typename BodyForceType>
-  void addBodyForce(BodyForceType body_force_function)
+  template <typename BodyForceType, int shape_index = -1>
+  void addBodyForce(BodyForceType body_force_function, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<BodyForceType>::value) {
       static_assert(body_force_function.numParameters() == sizeof...(parameter_space),
@@ -360,15 +368,16 @@ public:
         Dimension<dim>{},
         [parameterized_body_force, this](auto x, auto displacement, auto... params) {
           // Get the value and the gradient from the input tuple
-          auto [u, du_dX] = displacement;
+          auto [modified_u, modified_du_dX] =
+              serac::solid_util::adjustDisplacementWithShape<shape_index>(displacement, params...);
 
-          auto flux = du_dX * 0.0;
+          auto flux = modified_du_dX * 0.0;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
-          auto deformation_grad = du_dX + I_;
+          auto deformation_grad = modified_du_dX + I_;
 
-          auto source = parameterized_body_force(x, time_, u, du_dX, serac::get<0>(params)...) *
+          auto source = parameterized_body_force(x, time_, modified_u, modified_du_dX, serac::get<0>(params)...) *
                         (1.0 + geom_factor * (det(deformation_grad) - 1.0));
           return serac::tuple{source, flux};
         },
