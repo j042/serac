@@ -55,6 +55,28 @@ struct SolverOptions {
    */
   std::optional<TimesteppingOptions> dyn_options = std::nullopt;
 };
+
+/**
+ * @brief Adjust the displacement and displacement gradient with a shape displacement field
+ *
+ * @note If shape_index = -1, the original displacement is returned.
+ *
+ * @tparam shape_index The index of the shape parameter in the @ params parameter pack
+ * @tparam Ts Parameter types
+ * @param params A parameter pack containing the shape displacement parameter
+ * @return The modified displacement containing the shape displacement term if appropriate.
+ */
+template <int shape_index, typename... Ts>
+auto shape(Ts... params)
+{
+  if constexpr (shape_index != -1) {
+    static_assert(shape_index < sizeof...(params) && shape_index >= 0,
+                  "Shape index is greater than the number of parameters or less than negative one.");
+    return serac::get<shape_index>(serac::tuple{params...});
+  }
+  return serac::tuple{serac::zero{}, serac::zero{}};
+}
+
 }  // namespace solid_util
 
 /**
@@ -281,19 +303,19 @@ public:
         [this, parameterized_material](auto x, auto displacement, auto... params) {
           // Get the value and the gradient from the input tuple
 
-          auto [modified_u, modified_du_dX] =
-              serac::solid_util::adjustDisplacementWithShape<shape_index>(displacement, params...);
+          auto [u, du_dX] = displacement;
+
+          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
 
           auto source = zero{};
 
-          auto response = parameterized_material(x, modified_u, modified_du_dX, serac::get<0>(params)...);
+          auto response = parameterized_material(x + shape, u, du_dX, serac::get<0>(params)...);
 
-          auto flux = response.stress;
+          double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
-          if (geom_nonlin_ == GeometricNonlinearities::On) {
-            auto deformation_grad = modified_du_dX + I_;
-            flux                  = flux * inv(transpose(deformation_grad));
-          }
+          auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
+
+          auto flux = response.stress * inv(transpose(deformation_grad));
 
           return serac::tuple{source, flux};
         },
@@ -302,17 +324,19 @@ public:
     M_functional_->AddDomainIntegral(
         Dimension<dim>{},
         [this, parameterized_material](auto x, auto displacement, auto... params) {
-          auto [modified_u, modified_du_dX] =
-              serac::solid_util::adjustDisplacementWithShape<shape_index>(displacement, params...);
+          auto [u, du_dX] = displacement;
 
-          auto response = parameterized_material(x, modified_u, modified_du_dX, serac::get<0>(params)...);
+          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
 
-          auto flux = 0.0 * modified_du_dX;
+          auto response = parameterized_material(x + shape, u, du_dX, serac::get<0>(params)...);
+
+          auto flux = 0.0 * du_dX;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
-          auto deformation_grad = modified_du_dX + I_;
-          auto source           = response.density * modified_u * (1.0 + geom_factor * (det(deformation_grad) - 1.0));
+          auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
+
+          auto source = response.density * u * det(deformation_grad);
 
           return serac::tuple{source, flux};
         },
@@ -368,17 +392,18 @@ public:
         Dimension<dim>{},
         [parameterized_body_force, this](auto x, auto displacement, auto... params) {
           // Get the value and the gradient from the input tuple
-          auto [modified_u, modified_du_dX] =
-              serac::solid_util::adjustDisplacementWithShape<shape_index>(displacement, params...);
+          auto [u, du_dX] = displacement;
 
-          auto flux = modified_du_dX * 0.0;
+          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+
+          auto flux = du_dX * 0.0;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
-          auto deformation_grad = modified_du_dX + I_;
+          auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
 
-          auto source = parameterized_body_force(x, time_, modified_u, modified_du_dX, serac::get<0>(params)...) *
-                        (1.0 + geom_factor * (det(deformation_grad) - 1.0));
+          auto source =
+              parameterized_body_force(x + shape, time_, u, du_dX, serac::get<0>(params)...) * (det(deformation_grad));
           return serac::tuple{source, flux};
         },
         mesh_);
@@ -388,13 +413,14 @@ public:
    * @brief Set the traction boundary condition
    *
    * @tparam TractionType The type of the traction load
+   * @tparam shape_index An optional index for the shape displacement parameter
    * @param traction_function A function describing the traction applied to a boundary
    * @param compute_on_reference Flag to compute the traction in the reference configuration
    *
    * @pre TractionType must have the operator (x, normal, time) to return the thermal flux value
    */
-  template <typename TractionType>
-  void setTractionBCs(TractionType traction_function, bool compute_on_reference = true)
+  template <typename TractionType, int shape_index = -1>
+  void setTractionBCs(TractionType traction_function, bool compute_on_reference = true, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<TractionType>::value) {
       static_assert(traction_function.numParameters() == sizeof...(parameter_space),
@@ -410,7 +436,8 @@ public:
     K_functional_->AddBoundaryIntegral(
         Dimension<dim - 1>{},
         [this, parameterized_traction](auto x, auto n, auto, auto... params) {
-          return -1.0 * parameterized_traction(x, n, time_, params...);
+          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+          return -1.0 * parameterized_traction(x + shape, n, time_, params...);
         },
         mesh_);
   }
@@ -419,13 +446,14 @@ public:
    * @brief Set the pressure boundary condition
    *
    * @tparam PressureType The type of the pressure load
+   * @tparam shape_index An optional index for the shape displacement parameter
    * @param pressure_function A function describing the pressure applied to a boundary
    * @param compute_on_reference Flag to compute the pressure in the reference configuration
    *
    * @pre PressureType must have the operator (x, time) to return the thermal flux value
    */
-  template <typename PressureType>
-  void setPressureBCs(PressureType pressure_function, bool compute_on_reference = true)
+  template <typename PressureType, int shape_index = -1>
+  void setPressureBCs(PressureType pressure_function, bool compute_on_reference = true, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<PressureType>::value) {
       static_assert(pressure_function.numParameters() == sizeof...(parameter_space),
@@ -441,7 +469,8 @@ public:
     K_functional_->AddBoundaryIntegral(
         Dimension<dim - 1>{},
         [this, parameterized_pressure](auto x, auto n, auto, auto... params) {
-          return parameterized_pressure(x, time_, params...) * n;
+          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+          return parameterized_pressure(x + shape, time_, params...) * n;
         },
         mesh_);
   }

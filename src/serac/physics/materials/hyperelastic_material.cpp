@@ -32,7 +32,7 @@ double NeoHookeanMaterial::evalStrainEnergy(const mfem::DenseMatrix& du_dX) cons
   double det_J = F_.Det();
 
   // First invariant of FF^T
-  double I1_bar = pow(det_J, -2.0 / dim) * (F_ * F_);
+  double I1_bar = std::pow(det_J, -2.0 / dim) * (F_ * F_);
 
   return 0.5 * (mu_ * (I1_bar - dim) + bulk_ * (det_J - 1.0) * (det_J - 1.0));
 }

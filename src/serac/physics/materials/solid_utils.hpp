@@ -13,7 +13,6 @@
 #pragma once
 
 #include "mfem.hpp"
-#include "serac/numerics/functional/tuple.hpp"
 
 namespace serac::solid_util {
 
@@ -41,27 +40,5 @@ void calcLinearizedStrain(const mfem::DenseMatrix& du_dX, mfem::DenseMatrix& eps
  * @param[out] sigma the Cauchy stress tensor
  */
 void calcCauchyStressFromPK1Stress(const mfem::DenseMatrix& F, const mfem::DenseMatrix& P, mfem::DenseMatrix& sigma);
-
-/**
- * @brief Adjust the displacement and displacement gradient with a shape displacement field
- *
- * @note If shape_index = -1, the original displacement is returned.
- *
- * @tparam shape_index The index of the shape parameter in the @ params parameter pack
- * @tparam T Displacement type
- * @tparam Ts Parameter types
- * @param displacement A tuple of the displacement and displacement gradient
- * @param params A parameter pack containing the shape displacement parameter
- * @return The modified displacement containing the shape displacement term if appropriate.
- */
-template <int shape_index, typename T, typename... Ts>
-auto adjustDisplacementWithShape(T displacement, Ts... params)
-{
-  if constexpr (shape_index != -1) {
-    auto shape_param = serac::get<shape_index>(serac::tuple{params...});
-    return serac::tuple{displacement[0] + shape_param[0], displacement[1] + shape_param[1]};
-  }
-  return displacement;
-}
 
 }  // namespace serac::solid_util
