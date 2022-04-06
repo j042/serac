@@ -26,6 +26,10 @@
 namespace serac {
 
 namespace solid_util {
+
+/// A default index indicating no shape parameterization is used
+constexpr int NO_SHAPE_PARAMETERIZATION = -1;
+
 /// A timestep and boundary condition enforcement method for a dynamic solver
 struct TimesteppingOptions {
   /// The timestepping method to be applied
@@ -69,7 +73,7 @@ struct SolverOptions {
 template <int shape_index, typename... Ts>
 auto shape(Ts... params)
 {
-  if constexpr (shape_index != -1) {
+  if constexpr (shape_index != NO_SHAPE_PARAMETERIZATION) {
     static_assert(shape_index < sizeof...(params) && shape_index >= 0,
                   "Shape index is greater than the number of parameters or less than negative one.");
     return serac::get<shape_index>(serac::tuple{params...});
@@ -284,7 +288,7 @@ public:
    * @pre MaterialType must have a method density() defining the density
    * @pre MaterialType must have the operator (du_dX) defined as the Kirchoff stress
    */
-  template <typename MaterialType, int shape_index = -1>
+  template <typename MaterialType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
   void setMaterial(MaterialType material, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<MaterialType>::value) {
@@ -293,7 +297,7 @@ public:
                     "solid material.");
     }
 
-    static_assert(shape_index >= -1,
+    static_assert(shape_index >= solid_util::NO_SHAPE_PARAMETERIZATION,
                   "The shape index must be either -1 or a valid index of the user-specified parameter list 1");
 
     auto parameterized_material = parameterizeMaterial(material);
@@ -377,7 +381,7 @@ public:
    *
    * @pre BodyForceType must have the operator (x, time, displacement, d displacement_dx) defined as the body force
    */
-  template <typename BodyForceType, int shape_index = -1>
+  template <typename BodyForceType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
   void addBodyForce(BodyForceType body_force_function, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<BodyForceType>::value) {
@@ -419,7 +423,7 @@ public:
    *
    * @pre TractionType must have the operator (x, normal, time) to return the thermal flux value
    */
-  template <typename TractionType, int shape_index = -1>
+  template <typename TractionType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
   void setTractionBCs(TractionType traction_function, bool compute_on_reference = true, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<TractionType>::value) {
@@ -452,7 +456,7 @@ public:
    *
    * @pre PressureType must have the operator (x, time) to return the thermal flux value
    */
-  template <typename PressureType, int shape_index = -1>
+  template <typename PressureType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
   void setPressureBCs(PressureType pressure_function, bool compute_on_reference = true, Index<shape_index> = {})
   {
     if constexpr (is_parameterized<PressureType>::value) {
