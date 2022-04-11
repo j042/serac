@@ -43,31 +43,29 @@ public:
   /**
    * @brief Material response call for a linear isotropic solid
    *
-   * @tparam T1 Spatial position type
-   * @tparam T2 Displacement type
-   * @tparam T3 Displacement gradient type
-   * @tparam T4 Bulk modulus type
-   * @tparam T5 Shear modulus type
-   * @param du_dX Displacement gradient with respect to the reference configuration (du_dX)
+   * @tparam DisplacementType Displacement type
+   * @tparam DispGradType Displacement gradient type
+   * @tparam BulkType Bulk modulus type
+   * @tparam ShearType Shear modulus type
+   * @param displacement_grad Displacement gradient with respect to the reference configuration (displacement_grad)
    * @param bulk_parameter The parameterized bulk modulus
    * @param shear_parameter The parameterized shear modulus
-   * @return The calculated material response (density, kirchoff stress) for the material
+   * @return The calculated material response (density, Kirchoff stress) for the material
    */
-  template <typename T1, typename T2, typename T3, typename T4, typename T5>
-  SERAC_HOST_DEVICE auto operator()(const T1& /* x */, const T2& /* displacement */, const T3& du_dX,
-                                    const T4& bulk_parameter, const T5& shear_parameter) const
+  template <typename DisplacementType, typename DispGradType, typename BulkType, typename ShearType>
+  SERAC_HOST_DEVICE auto operator()(const tensor<double, dim>& /* x */, const DisplacementType& /* displacement */,
+                                    const DispGradType& displacement_grad, const BulkType& bulk_parameter,
+                                    const ShearType& shear_parameter) const
   {
     auto bulk_modulus  = bulk_parameter + bulk_modulus_offset_;
     auto shear_modulus = shear_parameter + shear_modulus_offset_;
 
     auto I      = Identity<dim>();
     auto lambda = bulk_modulus - (2.0 / dim) * shear_modulus;
-    auto strain = 0.5 * (du_dX + transpose(du_dX));
+    auto strain = 0.5 * (displacement_grad + transpose(displacement_grad));
     auto stress = lambda * tr(strain) * I + 2.0 * shear_modulus * strain;
 
-    using StressType = decltype(stress);
-
-    return MaterialResponse<double, StressType>{.density = density_, .stress = stress};
+    return MaterialResponse{.density = density_, .stress = stress};
   }
 
   /**
@@ -113,28 +111,29 @@ public:
   /**
    * @brief Material response call for a neo-Hookean solid
    *
-   * @tparam T1 Spatial position type
-   * @tparam T2 Displacement type
-   * @tparam T3 Displacement gradient type
-   * @tparam T4 Bulk modulus type
-   * @tparam T5 Shear modulus type
-   * @param du_dX Displacement gradient with respect to the reference configuration (du_dX)
+   * @tparam DisplacementType Displacement type
+   * @tparam DispGradType Displacement gradient type
+   * @tparam BulkType Bulk modulus type
+   * @tparam ShearType Shear modulus type
+   * @param displacement_grad Displacement gradient with respect to the reference configuration (displacement_grad)
    * @param bulk_parameter The parameterized bulk modulus
    * @param shear_parameter The parameterized shear modulus
    * @return The calculated material response (density, kirchoff stress) for the material
    */
-  template <typename T1, typename T2, typename T3, typename T4, typename T5>
-  SERAC_HOST_DEVICE auto operator()(const T1& /* x */, const T2& /* displacement */, const T3& du_dX,
-                                    const T4& bulk_parameter, const T5& shear_parameter) const
+  template <typename DisplacementType, typename DispGradType, typename BulkType, typename ShearType>
+  SERAC_HOST_DEVICE auto operator()(const tensor<double, dim>& /* x */, const DisplacementType& /* displacement */,
+                                    const DispGradType& displacement_grad, const BulkType& bulk_parameter,
+                                    const ShearType& shear_parameter) const
   {
     auto bulk_modulus  = bulk_parameter + bulk_modulus_offset_;
     auto shear_modulus = shear_parameter + shear_modulus_offset_;
 
-    auto I         = Identity<dim>();
-    auto lambda    = bulk_modulus - (2.0 / dim) * shear_modulus;
-    auto B_minus_I = du_dX * transpose(du_dX) + transpose(du_dX) + du_dX;
+    auto I      = Identity<dim>();
+    auto lambda = bulk_modulus - (2.0 / dim) * shear_modulus;
+    auto B_minus_I =
+        displacement_grad * transpose(displacement_grad) + transpose(displacement_grad) + displacement_grad;
 
-    auto J = det(du_dX + I);
+    auto J = det(displacement_grad + I);
 
     // TODO this resolve to the correct std implementation of log when J resolves to a pure double. It can
     // be removed by either putting the dual implementation of the global namespace or implementing a pure
@@ -142,8 +141,8 @@ public:
     using std::log;
     auto stress = lambda * log(J) * I + shear_modulus * B_minus_I;
 
+    // TODO For some reason, clang can't handle CTAD here. We should investigate why.
     using StressType = decltype(stress);
-
     return MaterialResponse<double, StressType>{.density = density_, .stress = stress};
   }
 
