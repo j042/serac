@@ -73,14 +73,16 @@ SERAC_HOST_DEVICE constexpr isotropic_tensor<double, m, m> Identity()
  * @param I the isotropic tensor being scaled
  * @return a new isotropic tensor equal to the product of scale * I
  */
-template <typename S, typename T, int m>
+template <typename S, typename T, int m,
+          typename = std::enable_if_t<std::is_arithmetic_v<S> || is_dual_number<S>::value>>
 SERAC_HOST_DEVICE constexpr auto operator*(S scale, isotropic_tensor<T, m, m> I)
 {
   return isotropic_tensor<decltype(S{} * T{}), m, m>{I.value * scale};
 }
 
 /// @overload
-template <typename S, typename T, int m>
+template <typename S, typename T, int m,
+          typename = std::enable_if_t<std::is_arithmetic_v<S> || is_dual_number<S>::value>>
 SERAC_HOST_DEVICE constexpr auto operator*(isotropic_tensor<T, m, m> I, S scale)
 {
   return isotropic_tensor<decltype(S{} * T{}), m, m>{I.value * scale};

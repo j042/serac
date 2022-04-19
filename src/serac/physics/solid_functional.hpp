@@ -316,7 +316,7 @@ public:
           auto source = zero{};
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate
-          auto du_dX_shape_mod = du_dX * inv(I_ + dshape_dX);
+          auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
 
           auto response = parameterized_material(x + shape, u, du_dX_shape_mod, serac::get<0>(params)...);
 
