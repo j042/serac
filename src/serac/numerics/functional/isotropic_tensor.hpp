@@ -83,7 +83,14 @@ SERAC_HOST_DEVICE constexpr auto operator*(S scale, isotropic_tensor<T, m, m> I)
 template <typename S, typename T, int m>
 SERAC_HOST_DEVICE constexpr auto operator*(isotropic_tensor<T, m, m> I, S scale)
 {
-  return isotropic_tensor<decltype(S{}, T{}), m, m>{I.value * scale};
+  return isotropic_tensor<decltype(S{} * T{}), m, m>{I.value * scale};
+}
+
+/// @overload
+template <typename T1, typename T2, int m>
+SERAC_HOST_DEVICE constexpr auto operator*(isotropic_tensor<T1, m, m> I1, isotropic_tensor<T2, m, m> I2)
+{
+  return isotropic_tensor<decltype(T1{} * T2{}), m, m>{I1.value * I2.value};
 }
 
 /**

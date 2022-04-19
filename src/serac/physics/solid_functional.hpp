@@ -315,7 +315,10 @@ public:
 
           auto source = zero{};
 
-          auto response = parameterized_material(x + shape, u, du_dX, serac::get<0>(params)...);
+          // Compute the displacement gradient with respect to the shape-adjusted coordinate
+          auto du_dX_shape_mod = du_dX * inv(I_ + dshape_dX);
+
+          auto response = parameterized_material(x + shape, u, du_dX_shape_mod, serac::get<0>(params)...);
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
