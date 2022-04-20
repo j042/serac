@@ -43,6 +43,7 @@ public:
   /**
    * @brief Material response call for a linear isotropic solid
    *
+   * @tparam PositionType Spatial position type
    * @tparam DisplacementType Displacement type
    * @tparam DispGradType Displacement gradient type
    * @tparam BulkType Bulk modulus type
@@ -52,8 +53,9 @@ public:
    * @param shear_parameter The parameterized shear modulus
    * @return The calculated material response (density, Kirchoff stress) for the material
    */
-  template <typename DisplacementType, typename DispGradType, typename BulkType, typename ShearType>
-  SERAC_HOST_DEVICE auto operator()(const tensor<double, dim>& /* x */, const DisplacementType& /* displacement */,
+  template <typename PositionType, typename DisplacementType, typename DispGradType, typename BulkType,
+            typename ShearType>
+  SERAC_HOST_DEVICE auto operator()(const PositionType& /* x */, const DisplacementType& /* displacement */,
                                     const DispGradType& displacement_grad, const BulkType& bulk_parameter,
                                     const ShearType& shear_parameter) const
   {
@@ -111,6 +113,7 @@ public:
   /**
    * @brief Material response call for a neo-Hookean solid
    *
+   * @tparam PositionType Spatial position type
    * @tparam DisplacementType Displacement type
    * @tparam DispGradType Displacement gradient type
    * @tparam BulkType Bulk modulus type
@@ -120,8 +123,9 @@ public:
    * @param shear_parameter The parameterized shear modulus
    * @return The calculated material response (density, kirchoff stress) for the material
    */
-  template <typename DisplacementType, typename DispGradType, typename BulkType, typename ShearType>
-  SERAC_HOST_DEVICE auto operator()(const tensor<double, dim>& /* x */, const DisplacementType& /* displacement */,
+  template <typename PositionType, typename DisplacementType, typename DispGradType, typename BulkType,
+            typename ShearType>
+  SERAC_HOST_DEVICE auto operator()(const PositionType& /* x */, const DisplacementType& /* displacement */,
                                     const DispGradType& displacement_grad, const BulkType& bulk_parameter,
                                     const ShearType& shear_parameter) const
   {

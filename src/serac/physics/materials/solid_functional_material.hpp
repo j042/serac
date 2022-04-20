@@ -78,13 +78,14 @@ public:
   /**
    * @brief Material response call for a linear isotropic solid
    *
+   * @tparam PositionType Spatial position type
    * @tparam DisplacementType Displacement type
    * @tparam DispGradType Displacement gradient type
    * @param displacement_grad Displacement gradient with respect to the reference configuration (displacement_grad)
    * @return The calculated material response (density, Kirchoff stress) for the material
    */
-  template <typename DisplacementType, typename DispGradType>
-  SERAC_HOST_DEVICE auto operator()(const tensor<double, dim>& /* x */, const DisplacementType& /* displacement */,
+  template <typename PositionType, typename DisplacementType, typename DispGradType>
+  SERAC_HOST_DEVICE auto operator()(const PositionType& /* x */, const DisplacementType& /* displacement */,
                                     const DispGradType& displacement_grad) const
   {
     auto I      = Identity<dim>();
@@ -145,8 +146,8 @@ public:
    * @param displacement_grad displacement gradient with respect to the reference configuration (displacement_grad)
    * @return The calculated material response (density, Kirchoff stress) for the material
    */
-  template <typename DisplacementType, typename DispGradType>
-  SERAC_HOST_DEVICE auto operator()(const tensor<double, dim>& /* x */, const DisplacementType& /* displacement */,
+  template <typename PositionType, typename DisplacementType, typename DispGradType>
+  SERAC_HOST_DEVICE auto operator()(const PositionType& /* x */, const DisplacementType& /* displacement */,
                                     const DispGradType& displacement_grad) const
   {
     auto I      = Identity<dim>();
@@ -185,15 +186,16 @@ struct ConstantBodyForce {
   /**
    * @brief Evaluation function for the constant body force model
    *
+   * @tparam PositionType Spatial position type
    * @tparam DisplacementType Displacement type
    * @tparam DispGradType Displacement gradient type
    * @tparam dim The dimension of the problem
    * @return The body force value
    */
-  template <typename DisplacementType, typename DispGradType>
-  SERAC_HOST_DEVICE tensor<double, dim> operator()(const tensor<double, dim>& /* x */, const double /* t */,
-                                                   const DisplacementType& /* displacement */,
-                                                   const DispGradType& /* displacement_grad */) const
+  template <typename PositionType, typename DisplacementType, typename DispGradType>
+  SERAC_HOST_DEVICE auto operator()(const PositionType& /* x */, const double /* t */,
+                                    const DisplacementType& /* displacement */,
+                                    const DispGradType& /* displacement_grad */) const
   {
     return force_;
   }
@@ -208,10 +210,12 @@ struct ConstantTraction {
   /**
    * @brief Evaluation function for the constant traction model
    *
+   * @tparam PositionType Spatial position type
+   * @tparam NormalType Boundary normal vector type
    * @return The traction value
    */
-  SERAC_HOST_DEVICE tensor<double, dim> operator()(const tensor<double, dim>& /* x */,
-                                                   const tensor<double, dim>& /* n */, const double /* t */) const
+  template <typename PositionType, typename NormalType>
+  SERAC_HOST_DEVICE auto operator()(const PositionType& /* x */, const NormalType& /* n */, const double /* t */) const
   {
     return traction_;
   }
@@ -248,9 +252,10 @@ struct ConstantPressure {
    * @brief Evaluation of the constant pressure model
    *
    * @tparam dim Spatial dimension
+   * @tparam PositionType Spatial position type
    */
-  template <int dim>
-  SERAC_HOST_DEVICE double operator()(const tensor<double, dim>& /* x */, const double /* t */) const
+  template <typename PositionType>
+  SERAC_HOST_DEVICE auto operator()(const PositionType& /* x */, const double /* t */) const
   {
     return pressure_;
   }
