@@ -129,7 +129,7 @@ auto shape(const Ts... params)
  * @tparam order The order of the discretization of the displacement and velocity fields
  * @tparam dim The spatial dimension of the mesh
  */
-template <int order, int dim, typename... parameter_space>
+template <int order, int dim, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION, typename... parameter_space>
 class SolidFunctional : public BasePhysics {
 public:
   /**
@@ -144,7 +144,8 @@ public:
   SolidFunctional(
       const solid_util::SolverOptions& options, GeometricNonlinearities geom_nonlin = GeometricNonlinearities::On,
       FinalMeshOption keep_deformation = FinalMeshOption::Deformed, const std::string& name = "",
-      std::array<std::reference_wrapper<FiniteElementState>, sizeof...(parameter_space)> parameter_states = {})
+      std::array<std::reference_wrapper<FiniteElementState>, sizeof...(parameter_space)> parameter_states = {},
+      Index<shape_index>                                                                                  = {})
       : BasePhysics(2, order),
         velocity_(StateManager::newState(FiniteElementState::Options{
             .order = order, .vector_dim = mesh_.Dimension(), .name = detail::addPrefix(name, "velocity")})),
@@ -188,6 +189,16 @@ public:
     mesh_.GetNodes(*reference_nodes_);
 
     deformed_nodes_ = std::make_unique<mfem::ParGridFunction>(*reference_nodes_);
+
+    // Check that the parameter for shape optimization is compatible with the displacement field
+    if constexpr (shape_index != solid_util::NO_SHAPE_PARAMETERIZATION) {
+      static_assert(shape_index >= 0, "Shape index must be greater than or equal to zero.");
+      static_assert(shape_index < sizeof...(parameter_space),
+                    "Shape index must be less than the number of parameter fields.");
+
+      SLIC_ERROR_ROOT_IF(displacement_.gridFunc().Size() != parameter_states_[shape_index].get().gridFunc().Size(),
+                         "Displacement and shape velocity discretizations are not the same.");
+    }
 
     displacement_.trueVec() = 0.0;
     velocity_.trueVec()     = 0.0;
@@ -309,7 +320,12 @@ public:
 
     // Update the mesh with the new deformed nodes
     deformed_nodes_->Set(1.0, displacement_.gridFunc());
+
     deformed_nodes_->Add(1.0, *reference_nodes_);
+
+    if constexpr (shape_index != solid_util::NO_SHAPE_PARAMETERIZATION) {
+      deformed_nodes_->Add(1.0, parameter_states_[shape_index].get().gridFunc());
+    }
 
     mesh_.NewNodes(*deformed_nodes_);
 
@@ -320,14 +336,13 @@ public:
    * @brief Set the material stress response and mass properties for the physics module
    *
    * @tparam MaterialType The solid material type
-   * @tparam shape_index An optional index for the shape displacement parameter
    * @param material A material containing density and stress evaluation information
    *
    * @pre MaterialType must have a method density() defining the density
    * @pre MaterialType must have the operator (du_dX) defined as the Kirchoff stress
    */
-  template <typename MaterialType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
-  void setMaterial(MaterialType material, Index<shape_index> = {})
+  template <typename MaterialType>
+  void setMaterial(MaterialType material)
   {
     if constexpr (is_parameterized<MaterialType>::value) {
       static_assert(material.numParameters() == sizeof...(parameter_space),
@@ -422,8 +437,8 @@ public:
    *
    * @pre BodyForceType must have the operator (x, time, displacement, d displacement_dx) defined as the body force
    */
-  template <typename BodyForceType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
-  void addBodyForce(BodyForceType body_force_function, Index<shape_index> = {})
+  template <typename BodyForceType>
+  void addBodyForce(BodyForceType body_force_function)
   {
     if constexpr (is_parameterized<BodyForceType>::value) {
       static_assert(body_force_function.numParameters() == sizeof...(parameter_space),
@@ -441,14 +456,17 @@ public:
 
           auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
 
+          // Compute the displacement gradient with respect to the shape-adjusted coordinate
+          auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
+
           auto flux = du_dX * 0.0;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
           auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
 
-          auto source =
-              parameterized_body_force(x + shape, time_, u, du_dX, serac::get<0>(params)...) * (det(deformation_grad));
+          auto source = parameterized_body_force(x + shape, time_, u, du_dX_shape_mod, serac::get<0>(params)...) *
+                        (det(deformation_grad));
           return serac::tuple{source, flux};
         },
         mesh_);
@@ -458,14 +476,13 @@ public:
    * @brief Set the traction boundary condition
    *
    * @tparam TractionType The type of the traction load
-   * @tparam shape_index An optional index for the shape displacement parameter
    * @param traction_function A function describing the traction applied to a boundary
    * @param compute_on_reference Flag to compute the traction in the reference configuration
    *
    * @pre TractionType must have the operator (x, normal, time) to return the thermal flux value
    */
-  template <typename TractionType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
-  void setTractionBCs(TractionType traction_function, bool compute_on_reference = true, Index<shape_index> = {})
+  template <typename TractionType>
+  void setTractionBCs(TractionType traction_function, bool compute_on_reference = true)
   {
     if constexpr (is_parameterized<TractionType>::value) {
       static_assert(traction_function.numParameters() == sizeof...(parameter_space),
@@ -491,14 +508,13 @@ public:
    * @brief Set the pressure boundary condition
    *
    * @tparam PressureType The type of the pressure load
-   * @tparam shape_index An optional index for the shape displacement parameter
    * @param pressure_function A function describing the pressure applied to a boundary
    * @param compute_on_reference Flag to compute the pressure in the reference configuration
    *
    * @pre PressureType must have the operator (x, time) to return the thermal flux value
    */
-  template <typename PressureType, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION>
-  void setPressureBCs(PressureType pressure_function, bool compute_on_reference = true, Index<shape_index> = {})
+  template <typename PressureType>
+  void setPressureBCs(PressureType pressure_function, bool compute_on_reference = true)
   {
     if constexpr (is_parameterized<PressureType>::value) {
       static_assert(pressure_function.numParameters() == sizeof...(parameter_space),

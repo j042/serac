@@ -94,7 +94,7 @@ void functional_solid_test_static(double expected_disp_norm)
   solid_solver.outputState();
 
   // Check the final displacement norm
-  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-6);
+  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-5);
 }
 
 template <int p, int dim>
@@ -176,7 +176,7 @@ void functional_solid_test_dynamic(double expected_disp_norm)
   }
 
   // Check the final displacement norm
-  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-6);
+  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-5);
 }
 
 enum class TestType
@@ -274,7 +274,7 @@ void functional_solid_test_boundary(double expected_disp_norm, TestType test_mod
   solid_solver.outputState();
 
   // Check the final displacement norm
-  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-6);
+  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-5);
 }
 
 template <int p, int dim>
@@ -327,9 +327,9 @@ void functional_parameterized_solid_test(double expected_disp_norm)
   user_defined_bulk_modulus = 1.0;
 
   // Construct a functional-based solid mechanics solver
-  SolidFunctional<p, dim, H1<1>, H1<1>> solid_solver(default_static, GeometricNonlinearities::On,
-                                                     FinalMeshOption::Reference, "solid_functional",
-                                                     {user_defined_bulk_modulus, user_defined_shear_modulus});
+  SolidFunctional<p, dim, solid_util::NO_SHAPE_PARAMETERIZATION, H1<1>, H1<1>> solid_solver(
+      default_static, GeometricNonlinearities::On, FinalMeshOption::Reference, "solid_functional",
+      {user_defined_bulk_modulus, user_defined_shear_modulus});
 
   solid_util::ParameterizedNeoHookeanSolid<dim> mat(1.0, 0.0, 0.0);
   solid_solver.setMaterial(mat);
@@ -364,16 +364,16 @@ void functional_parameterized_solid_test(double expected_disp_norm)
   solid_solver.outputState();
 
   // Check the final displacement norm
-  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-6);
+  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-5);
 }
 
 template <int p, int dim>
-void functional_shape_solid_test(double expected_disp_norm)
+void functional_shape_solid_test(double expected_min_disp, bool move_nodes)
 {
   MPI_Barrier(MPI_COMM_WORLD);
 
-  int serial_refinement   = 0;
-  int parallel_refinement = 0;
+  int serial_refinement   = 2;
+  int parallel_refinement = 1;
 
   // Create DataStore
   axom::sidre::DataStore datastore;
@@ -383,7 +383,7 @@ void functional_shape_solid_test(double expected_disp_norm)
 
   // Construct the appropriate dimension mesh and give it to the data store
   std::string filename =
-      (dim == 2) ? SERAC_REPO_DIR "/data/meshes/beam-quad.mesh" : SERAC_REPO_DIR "/data/meshes/beam-hex.mesh";
+      (dim == 2) ? SERAC_REPO_DIR "/data/meshes/square.mesh" : SERAC_REPO_DIR "/data/meshes/one-hex.mesh";
 
   auto mesh = mesh::refineAndDistribute(buildMeshFromFile(filename), serial_refinement, parallel_refinement);
   serac::StateManager::setMesh(std::move(mesh));
@@ -406,20 +406,30 @@ void functional_shape_solid_test(double expected_disp_norm)
 
   // Construct and initialized the user-defined shape velocity to offset the computational mesh
   FiniteElementState user_defined_shape_velocity(StateManager::newState(
-      FiniteElementState::Options{.order = 1, .vector_dim = dim, .name = "parameterized_shape"}));
+      FiniteElementState::Options{.order = p, .vector_dim = dim, .name = "parameterized_shape"}));
 
-  user_defined_shape_velocity = 1.0;
+  if (move_nodes) {
+    mfem::VectorFunctionCoefficient shape_coef(dim, [](const mfem::Vector& x, mfem::Vector& shape_velocity) {
+      shape_velocity[0] = 1.0 + x[0] * (1.0 - x[0]) * x[1] * (1.0 - x[1]) * 2.0;
+      shape_velocity[1] = 1.0 + 0.0;
+    });
+
+    user_defined_shape_velocity.project(shape_coef);
+
+  } else {
+    user_defined_shape_velocity = 1.0;
+  }
 
   // Save the index of the shape velocity field
   constexpr int SHAPE_FIELD = 0;
 
   // Construct a functional-based solid mechanics solver
-  SolidFunctional<p, dim, H1<1, dim>> solid_solver(default_static, GeometricNonlinearities::On,
-                                                   FinalMeshOption::Reference, "solid_functional",
-                                                   {user_defined_shape_velocity});
+  SolidFunctional<p, dim, SHAPE_FIELD, H1<p, dim>> solid_solver(default_static, GeometricNonlinearities::On,
+                                                                FinalMeshOption::Reference, "solid_functional",
+                                                                {user_defined_shape_velocity});
 
   solid_util::NeoHookeanSolid<dim> mat(1.0, 1.0, 1.0);
-  solid_solver.setMaterial(mat, Index<SHAPE_FIELD>{});
+  solid_solver.setMaterial(mat);
 
   // Define the function for the initial displacement and boundary condition
   auto bc = [](const mfem::Vector&, mfem::Vector& bc_vec) -> void { bc_vec = 0.0; };
@@ -431,17 +441,20 @@ void functional_shape_solid_test(double expected_disp_norm)
   tensor<double, dim> constant_force;
 
   constant_force[0] = 0.0;
-  constant_force[1] = 5.0e-4;
+  constant_force[1] = 1.0e-3;
 
   if (dim == 3) {
     constant_force[2] = 0.0;
   }
 
   solid_util::ConstantBodyForce<dim> force{constant_force};
-  solid_solver.addBodyForce(force, Index<SHAPE_FIELD>{});
+  solid_solver.addBodyForce(force);
 
   // Finalize the data structures
   solid_solver.completeSetup();
+
+  // Output the sidre-based plot files
+  solid_solver.outputState();
 
   // Perform the quasi-static solve
   double dt = 1.0;
@@ -451,13 +464,14 @@ void functional_shape_solid_test(double expected_disp_norm)
   solid_solver.outputState();
 
   // Check the final displacement norm
-  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-6);
+  EXPECT_NEAR(expected_min_disp, min(solid_solver.displacement()), 1.0e-5);
 }
 
 TEST(solid_functional, 2D_linear_static) { functional_solid_test_static<1, 2>(1.511052595); }
 TEST(solid_functional, 2D_quad_static) { functional_solid_test_static<2, 2>(2.18604855); }
 TEST(solid_functional, 2D_quad_parameterized_static) { functional_parameterized_solid_test<2, 2>(2.18604855); }
-TEST(solid_functional, 2D_quad_shape_static) { functional_shape_solid_test<2, 2>(2.18604855); }
+TEST(solid_functional, 2D_quad_shape_static) { functional_shape_solid_test<2, 2>(2.192933045, false); }
+TEST(solid_functional, 2D_quad_shape_static_move_nodes) { functional_shape_solid_test<2, 2>(2.192933045, true); }
 
 TEST(solid_functional, 3D_linear_static) { functional_solid_test_static<1, 3>(1.37084852); }
 TEST(solid_functional, 3D_quad_static) { functional_solid_test_static<2, 3>(1.949532747); }
