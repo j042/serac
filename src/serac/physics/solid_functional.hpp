@@ -84,13 +84,19 @@ struct ShapeHelper {
 };
 
 /**
- * @overload
+ * @brief Helper struct for computing shape velocity derivatives.
  *
- * This is a partial template specialization for when shape_index = -1, indicating
- * that no shape velocity fields exist in the problem.
+ * This is a partial specialization when no shape velocity parameterization exists.
+ *
+ * @tparam Ts Types for the parameter pack
  */
 template <typename... Ts>
-struct ShapeHelper<-1, Ts...> {
+struct ShapeHelper<solid_util::NO_SHAPE_PARAMETERIZATION, Ts...> {
+  /**
+   * @brief Function for returning zero when no shape velocity parameterizations exist
+   *
+   * @return A tuple of zeros indicating no shape velocity
+   */
   auto value(const Ts...) { return serac::tuple{serac::zero{}, serac::zero{}}; }
 };
 
