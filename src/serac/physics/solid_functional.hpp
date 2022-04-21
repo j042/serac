@@ -61,6 +61,40 @@ struct SolverOptions {
 };
 
 /**
+ * @brief Helper struct for computing shape velocity derivatives
+ *
+ * @tparam shape_index Index for the shape velocity design parameter
+ * @tparam Ts Types for the parameter pack
+ */
+template <int shape_index, typename... Ts>
+struct ShapeHelper {
+  /**
+   * @brief Function for calculating shape velocity values
+   *
+   * @param params Parameter pack of design variables
+   * @return A tuple of the shape velocity value and it's spatial gradient
+   */
+  auto value(const Ts... params)
+  {
+    static_assert(shape_index >= 0, "Shape index must be greater than or equal to zero.");
+    static_assert(shape_index < sizeof...(params), "Shape index must be less than the number of parameter fields.");
+
+    return serac::get<shape_index>(serac::tuple<Ts...>{params...});
+  }
+};
+
+/**
+ * @overload
+ *
+ * This is a partial template specialization for when shape_index = -1, indicating
+ * that no shape velocity fields exist in the problem.
+ */
+template <typename... Ts>
+struct ShapeHelper<-1, Ts...> {
+  auto value(const Ts...) { return serac::tuple{serac::zero{}, serac::zero{}}; }
+};
+
+/**
  * @brief Adjust the displacement and displacement gradient with a shape displacement field
  *
  * @note If shape_index = -1, the original displacement is returned.
@@ -71,17 +105,13 @@ struct SolverOptions {
  * @return The modified displacement containing the shape displacement term if appropriate.
  */
 template <int shape_index, typename... Ts>
-auto shape(Ts... params)
+auto shape(const Ts... params)
 {
-  if constexpr (shape_index != NO_SHAPE_PARAMETERIZATION) {
-    static_assert(shape_index < sizeof...(params) && shape_index >= 0,
-                  "Shape index is greater than the number of parameters or less than negative one.");
-    return serac::get<shape_index>(serac::tuple{params...});
-  }
-  return serac::tuple{serac::zero{}, serac::zero{}};
+  ShapeHelper<shape_index, Ts...> shape_helper;
+  return shape_helper.value(params...);
 }
 
-}  // namespace solid_util
+}  // end namespace solid_util
 
 /**
  * @brief The nonlinear solid solver class
