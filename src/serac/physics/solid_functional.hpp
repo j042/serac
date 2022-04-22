@@ -350,8 +350,10 @@ public:
                     "solid material.");
     }
 
-    static_assert(shape_index >= solid_util::NO_SHAPE_PARAMETERIZATION,
-                  "The shape index must be either -1 or a valid index of the user-specified parameter list 1");
+    if constexpr (shape_index != solid_util::NO_SHAPE_PARAMETERIZATION) {
+      static_assert(shape_index < sizeof...(parameter_space),
+                    "The shape index must be either -1 or a valid index of the user-specified parameter list");
+    }
 
     auto parameterized_material = parameterizeMaterial(material);
 
@@ -362,17 +364,28 @@ public:
 
           auto [u, du_dX] = displacement;
 
+          // Determine the shape velocity and shape velocity gradient. If shape velocity
+          // is not defined (shape_index == NO_SHAPE_PARAMETERIZATION), these values
+          // will be zero
           auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
 
           auto source = zero{};
 
-          // Compute the displacement gradient with respect to the shape-adjusted coordinate
+          // Compute the displacement gradient with respect to the shape-adjusted coordinate.
+
+          // Note that the current configuration x = X + u + p, where X is the original reference
+          // configuration, u is the displacement, and p is the shape velocity. We need the gradient with
+          // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
+          // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
           auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
 
           auto response = parameterized_material(x + shape, u, du_dX_shape_mod, serac::get<0>(params)...);
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
+          // This deformation gradient is the volumetric transform to get us back to the original
+          // reference configuration dx/dX = I + du/dX + dp/dX. If we are not including geometric
+          // nonlinearities, we ignore the du/dX factor
           auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
 
           auto flux = response.stress * inv(transpose(deformation_grad));
@@ -388,12 +401,23 @@ public:
 
           auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
 
-          auto response = parameterized_material(x + shape, u, du_dX, serac::get<0>(params)...);
+          // Compute the displacement gradient with respect to the shape-adjusted coordinate.
+
+          // Note that the current configuration x = X + u + p, where X is the original reference
+          // configuration, u is the displacement, and p is the shape velocity. We need the gradient with
+          // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
+          // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
+          auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
+
+          auto response = parameterized_material(x + shape, u, du_dX_shape_mod, serac::get<0>(params)...);
 
           auto flux = 0.0 * du_dX;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
+          // This deformation gradient is the volumetric transform to get us back to the original
+          // reference configuration dx/dX = I + du/dX + dp/dX. If we are not including geometric
+          // nonlinearities, we ignore the du/dX factor
           auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
 
           auto source = response.density * u * det(deformation_grad);
@@ -456,13 +480,21 @@ public:
 
           auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
 
-          // Compute the displacement gradient with respect to the shape-adjusted coordinate
+          // Compute the displacement gradient with respect to the shape-adjusted coordinate.
+
+          // Note that the current configuration x = X + u + p, where X is the original reference
+          // configuration, u is the displacement, and p is the shape velocity. We need the gradient with
+          // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
+          // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
           auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
 
           auto flux = du_dX * 0.0;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
+          // This deformation gradient is the volumetric transform to get us back to the original
+          // reference configuration dx/dX = I + du/dX + dp/dX. If we are not including geometric
+          // nonlinearities, we ignore the du/dX factor
           auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
 
           auto source = parameterized_body_force(x + shape, time_, u, du_dX_shape_mod, serac::get<0>(params)...) *

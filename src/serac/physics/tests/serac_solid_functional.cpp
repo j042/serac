@@ -408,6 +408,8 @@ void functional_shape_solid_test(double expected_disp_norm, bool move_nodes)
   FiniteElementState user_defined_shape_velocity(StateManager::newState(
       FiniteElementState::Options{.order = p, .vector_dim = dim, .name = "parameterized_shape"}));
 
+  // Project either a non-affine transformation with an affine transformation on the boundary or
+  // a simple translation on the shape velocity field.
   if (move_nodes) {
     mfem::VectorFunctionCoefficient shape_coef(dim, [](const mfem::Vector& x, mfem::Vector& shape_velocity) {
       shape_velocity[0] = 1.0 + x[0] * (1.0 - x[0]) * x[1] * (1.0 - x[1]) * 2.0;
@@ -423,7 +425,7 @@ void functional_shape_solid_test(double expected_disp_norm, bool move_nodes)
   // Save the index of the shape velocity field
   constexpr int SHAPE_FIELD = 0;
 
-  // Construct a functional-based solid mechanics solver
+  // Construct a functional-based solid mechanics solver including references to the shape velocity field.
   SolidFunctional<p, dim, SHAPE_FIELD, H1<p, dim>> solid_solver(default_static, GeometricNonlinearities::On,
                                                                 FinalMeshOption::Reference, "solid_functional",
                                                                 {user_defined_shape_velocity});
@@ -438,6 +440,7 @@ void functional_shape_solid_test(double expected_disp_norm, bool move_nodes)
   solid_solver.setDisplacementBCs(ess_bdr, bc);
   solid_solver.setDisplacement(bc);
 
+  // Construct and apply a uniform body load
   tensor<double, dim> constant_force;
 
   constant_force[0] = 0.0;
@@ -453,6 +456,7 @@ void functional_shape_solid_test(double expected_disp_norm, bool move_nodes)
   // Finalize the data structures
   solid_solver.completeSetup();
 
+  // Save the output for inspection
   solid_solver.initializeOutput(serac::OutputType::VisIt, "shape_optimization");
 
   // Output the sidre-based plot files
