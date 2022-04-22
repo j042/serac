@@ -453,7 +453,7 @@ void functional_shape_solid_test(double expected_disp_norm, bool move_nodes)
   // Finalize the data structures
   solid_solver.completeSetup();
 
-  solid_solver.initializeOutput(serac::OutputType::VisIt, "shape_optimization";
+  solid_solver.initializeOutput(serac::OutputType::VisIt, "shape_optimization");
 
   // Output the sidre-based plot files
   solid_solver.outputState();
