@@ -198,7 +198,11 @@ public:
 
       SLIC_ERROR_ROOT_IF(displacement_.gridFunc().Size() != parameter_states_[shape_index].get().gridFunc().Size(),
                          "Displacement and shape velocity discretizations are not the same.");
+
+      deformed_nodes_->Add(1.0, parameter_states_[shape_index].get().gridFunc());
     }
+
+    mesh_.NewNodes(*deformed_nodes_);
 
     displacement_.trueVec() = 0.0;
     velocity_.trueVec()     = 0.0;
@@ -236,6 +240,10 @@ public:
     // Update the mesh with the new deformed nodes if requested
     if (keep_deformation_ == FinalMeshOption::Deformed) {
       *reference_nodes_ += displacement_.gridFunc();
+
+      if constexpr (shape_index != solid_util::NO_SHAPE_PARAMETERIZATION) {
+        *reference_nodes_ += parameter_states_[shape_index].get().gridFunc();
+      }
     }
 
     // Build a new grid function to store the mesh nodes post-destruction
