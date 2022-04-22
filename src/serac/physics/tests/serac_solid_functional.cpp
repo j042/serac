@@ -368,7 +368,7 @@ void functional_parameterized_solid_test(double expected_disp_norm)
 }
 
 template <int p, int dim>
-void functional_shape_solid_test(double expected_min_disp, bool move_nodes)
+void functional_shape_solid_test(double expected_disp_norm, bool move_nodes)
 {
   MPI_Barrier(MPI_COMM_WORLD);
 
@@ -453,6 +453,8 @@ void functional_shape_solid_test(double expected_min_disp, bool move_nodes)
   // Finalize the data structures
   solid_solver.completeSetup();
 
+  solid_solver.initializeOutput(serac::OutputType::VisIt, "shape_optimization";
+
   // Output the sidre-based plot files
   solid_solver.outputState();
 
@@ -464,14 +466,14 @@ void functional_shape_solid_test(double expected_min_disp, bool move_nodes)
   solid_solver.outputState();
 
   // Check the final displacement norm
-  EXPECT_NEAR(expected_min_disp, min(solid_solver.displacement()), 1.0e-5);
+  EXPECT_NEAR(expected_disp_norm, norm(solid_solver.displacement()), 1.0e-5);
 }
 
 TEST(solid_functional, 2D_linear_static) { functional_solid_test_static<1, 2>(1.511052595); }
 TEST(solid_functional, 2D_quad_static) { functional_solid_test_static<2, 2>(2.18604855); }
 TEST(solid_functional, 2D_quad_parameterized_static) { functional_parameterized_solid_test<2, 2>(2.18604855); }
-TEST(solid_functional, 2D_quad_shape_static) { functional_shape_solid_test<2, 2>(2.192933045, false); }
-TEST(solid_functional, 2D_quad_shape_static_move_nodes) { functional_shape_solid_test<2, 2>(2.192933045, true); }
+TEST(solid_functional, 2D_quad_shape_static) { functional_shape_solid_test<2, 2>(0.00011278491, false); }
+TEST(solid_functional, 2D_quad_shape_static_move_nodes) { functional_shape_solid_test<2, 2>(0.000112885, true); }
 
 TEST(solid_functional, 3D_linear_static) { functional_solid_test_static<1, 3>(1.37084852); }
 TEST(solid_functional, 3D_quad_static) { functional_solid_test_static<2, 3>(1.949532747); }
