@@ -153,14 +153,14 @@ TEST(solid_functional_finite_diff, finite_difference)
     user_defined_bulk_modulus.distributeSharedDofs();
 
     // Finite difference to compute sensitivity of displacement with respect to bulk modulus
-    mfem::ParGridFunction ddisp_dshape(&solid_solver.displacement().space());
+    mfem::ParGridFunction ddisp_dbulk(&solid_solver.displacement().space());
     for (int i2 = 0; i2 < displacement_plus.Size(); ++i2) {
-      ddisp_dshape(i2) = (displacement_plus(i2) - displacement_minus(i2)) / (2.0 * eps);
+      ddisp_dbulk(i2) = (displacement_plus(i2) - displacement_minus(i2)) / (2.0 * eps);
     }
 
     // Compute numerical value of sensitivity of qoi with respect to bulk modulus
     // by taking the inner product between adjoint load and displacement sensitivity
-    double dqoi_dbulk = adjoint_load_form(ddisp_dshape);
+    double dqoi_dbulk = adjoint_load_form(ddisp_dbulk);
 
     // See if these are similar
     SLIC_INFO(axom::fmt::format("dqoi_dbulk: {}", dqoi_dbulk));
