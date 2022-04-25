@@ -61,18 +61,18 @@ struct SolverOptions {
 };
 
 /**
- * @brief Helper struct for computing shape velocity derivatives
+ * @brief Helper struct for computing shape displacement derivatives
  *
- * @tparam shape_index Index for the shape velocity design parameter
+ * @tparam shape_index Index for the shape displacement design parameter
  * @tparam Ts Types for the parameter pack
  */
 template <int shape_index, typename... Ts>
 struct ShapeHelper {
   /**
-   * @brief Function for calculating shape velocity values
+   * @brief Function for calculating shape displacement values
    *
    * @param params Parameter pack of design variables
-   * @return A tuple of the shape velocity value and it's spatial gradient
+   * @return A tuple of the shape displacement value and its spatial gradient
    */
   auto value(const Ts... params)
   {
@@ -84,26 +84,26 @@ struct ShapeHelper {
 };
 
 /**
- * @brief Helper struct for computing shape velocity derivatives.
+ * @brief Helper struct for computing shape displacement derivatives.
  *
- * This is a partial specialization when no shape velocity parameterization exists.
+ * This is a partial specialization when no shape displacement parameterization exists.
  *
  * @tparam Ts Types for the parameter pack
  */
 template <typename... Ts>
 struct ShapeHelper<solid_util::NO_SHAPE_PARAMETERIZATION, Ts...> {
   /**
-   * @brief Function for returning zero when no shape velocity parameterizations exist
+   * @brief Function for returning zero when no shape displacement parameterizations exist
    *
-   * @return A tuple of zeros indicating no shape velocity
+   * @return A tuple of zeros indicating no shape displacement
    */
   auto value(const Ts...) { return serac::tuple{serac::zero{}, serac::zero{}}; }
 };
 
 /**
- * @brief Adjust the displacement and displacement gradient with a shape displacement field
+ * @brief Determine the shape displacement and its gradient
  *
- * @note If shape_index = -1, the original displacement is returned.
+ * @note If @ shape_index = -1 indicating no shape displacement field is present, zero is returned.
  *
  * @tparam shape_index The index of the shape parameter in the @ params parameter pack
  * @tparam Ts Parameter types
@@ -128,6 +128,8 @@ auto shape(const Ts... params)
  *
  * @tparam order The order of the discretization of the displacement and velocity fields
  * @tparam dim The spatial dimension of the mesh
+ * @tparam shape_index The index of the shape displacement parameter
+ * @tparam parameter_space The finite element spaces for the design parameters
  */
 template <int order, int dim, int shape_index = solid_util::NO_SHAPE_PARAMETERIZATION, typename... parameter_space>
 class SolidFunctional : public BasePhysics {
@@ -197,7 +199,7 @@ public:
                     "Shape index must be less than the number of parameter fields.");
 
       SLIC_ERROR_ROOT_IF(displacement_.gridFunc().Size() != parameter_states_[shape_index].get().gridFunc().Size(),
-                         "Displacement and shape velocity discretizations are not the same.");
+                         "Displacement and shape displacement discretizations are not the same.");
 
       deformed_nodes_->Add(1.0, parameter_states_[shape_index].get().gridFunc());
     }
@@ -346,8 +348,7 @@ public:
    * @tparam MaterialType The solid material type
    * @param material A material containing density and stress evaluation information
    *
-   * @pre MaterialType must have a method density() defining the density
-   * @pre MaterialType must have the operator (du_dX) defined as the Kirchoff stress
+   * @pre MaterialType must have the operator (x, u, du_dX, params...) defined as the material response
    */
   template <typename MaterialType>
   void setMaterial(MaterialType material)
@@ -372,7 +373,7 @@ public:
 
           auto [u, du_dX] = displacement;
 
-          // Determine the shape velocity and shape velocity gradient. If shape velocity
+          // Determine the shape displacement and shape displacement gradient. If shape displacement
           // is not defined (shape_index == NO_SHAPE_PARAMETERIZATION), these values
           // will be zero
           auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
@@ -381,8 +382,8 @@ public:
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate.
 
-          // Note that the current configuration x = X + u + p, where X is the original reference
-          // configuration, u is the displacement, and p is the shape velocity. We need the gradient with
+          // Note that the current configuration x' = X + u + p, where X is the original reference
+          // configuration, u is the displacement, and p is the shape displacement. We need the gradient with
           // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
           // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
           auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
@@ -393,7 +394,7 @@ public:
 
           // This deformation gradient is the volumetric transform to get us back to the original
           // reference configuration dx/dX = I + du/dX + dp/dX. If we are not including geometric
-          // nonlinearities, we ignore the du/dX factor
+          // nonlinearities, we ignore the du/dX factor.
           auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
 
           auto flux = response.stress * inv(transpose(deformation_grad));
@@ -411,8 +412,8 @@ public:
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate.
 
-          // Note that the current configuration x = X + u + p, where X is the original reference
-          // configuration, u is the displacement, and p is the shape velocity. We need the gradient with
+          // Note that the current configuration x' = X + u + p, where X is the original reference
+          // configuration, u is the displacement, and p is the shape displacement. We need the gradient with
           // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
           // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
           auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
@@ -467,7 +468,8 @@ public:
    * @tparam BodyForceType The type of the body force load
    * @param body_force_function A source function for a prescribed body load
    *
-   * @pre BodyForceType must have the operator (x, time, displacement, d displacement_dx) defined as the body force
+   * @pre BodyForceType must have the operator (x, time, displacement, d displacement_dX, params...) defined as the body
+   * force
    */
   template <typename BodyForceType>
   void addBodyForce(BodyForceType body_force_function)
@@ -490,9 +492,9 @@ public:
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate.
 
-          // Note that the current configuration x = X + u + p, where X is the original reference
-          // configuration, u is the displacement, and p is the shape velocity. We need the gradient with
-          // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
+          // Note that the current configuration x' = X + u + p, where X is the original reference
+          // configuration, u is the displacement, and p is the shape displacement. We need the gradient with
+          // respect to the perturbed reference configuration X' = X + p for the force model. Therefore, we calculate
           // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
           auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
 

@@ -64,21 +64,21 @@ TEST(solid_functional_finite_diff, finite_difference)
 
   user_defined_shear_modulus = shear_modulus_value;
 
-  FiniteElementState user_defined_shape_velocity(
+  FiniteElementState user_defined_bulk_modulus(
       StateManager::newState(FiniteElementState::Options{.order = 1, .name = "parameterized_bulk"}));
 
-  double shape_velocity_value = 1.0;
+  double bulk_modulus_value = 1.0;
 
-  user_defined_shape_velocity = shape_velocity_value;
+  user_defined_bulk_modulus = bulk_modulus_value;
 
   // Construct a functional-based solid solver
   SolidFunctional<p, dim, solid_util::NO_SHAPE_PARAMETERIZATION, H1<1>, H1<1>> solid_solver(
       default_static, GeometricNonlinearities::On, FinalMeshOption::Reference, "solid_functional",
-      {user_defined_shape_velocity, user_defined_shear_modulus});
+      {user_defined_bulk_modulus, user_defined_shear_modulus});
 
   // We must know the index of the parameter finite element state in our parameter pack to take sensitivities.
   // As we only have one parameter in this example, the index is zero.
-  constexpr int bulk_parameter_index = 0;
+  constexpr int BULK_INDEX = 0;
 
   solid_util::ParameterizedNeoHookeanSolid<dim> mat(1.0, 0.0, 0.0);
   solid_solver.setMaterial(mat);
@@ -128,29 +128,29 @@ TEST(solid_functional_finite_diff, finite_difference)
   solid_solver.solveAdjoint(adjoint_load);
 
   // Compute the sensitivity (d QOI/ d state * d state/d parameter) given the current adjoint solution
-  [[maybe_unused]] auto& sensitivity = solid_solver.computeSensitivity<bulk_parameter_index>();
+  [[maybe_unused]] auto& sensitivity = solid_solver.computeSensitivity<BULK_INDEX>();
 
   // Perform finite difference on each bulk modulus value
   // to check if computed qoi sensitivity is consistent
   // with finite difference on the displacement
   double eps = 1.0e-6;
-  for (int i = 0; i < user_defined_shape_velocity.gridFunc().Size(); ++i) {
+  for (int i = 0; i < user_defined_bulk_modulus.gridFunc().Size(); ++i) {
     // Perturb the bulk modulus
-    user_defined_shape_velocity.trueVec()(i) = shape_velocity_value + eps;
-    user_defined_shape_velocity.distributeSharedDofs();
+    user_defined_bulk_modulus.trueVec()(i) = bulk_modulus_value + eps;
+    user_defined_bulk_modulus.distributeSharedDofs();
 
     solid_solver.advanceTimestep(dt);
     mfem::ParGridFunction displacement_plus = solid_solver.displacement().gridFunc();
 
-    user_defined_shape_velocity.trueVec()(i) = shape_velocity_value - eps;
-    user_defined_shape_velocity.distributeSharedDofs();
+    user_defined_bulk_modulus.trueVec()(i) = bulk_modulus_value - eps;
+    user_defined_bulk_modulus.distributeSharedDofs();
 
     solid_solver.advanceTimestep(dt);
     mfem::ParGridFunction displacement_minus = solid_solver.displacement().gridFunc();
 
     // Reset to the original bulk modulus value
-    user_defined_shape_velocity.trueVec()(i) = shape_velocity_value;
-    user_defined_shape_velocity.distributeSharedDofs();
+    user_defined_bulk_modulus.trueVec()(i) = bulk_modulus_value;
+    user_defined_bulk_modulus.distributeSharedDofs();
 
     // Finite difference to compute sensitivity of displacement with respect to bulk modulus
     mfem::ParGridFunction ddisp_dshape(&solid_solver.displacement().space());
@@ -205,20 +205,20 @@ TEST(solid_functional_finite_diff, finite_difference_shape)
 
   const typename solid_util::SolverOptions default_static = {default_linear_options, default_nonlinear_options};
 
-  // Construct and initialized the user-defined shape velocity to offset the computational mesh
-  FiniteElementState user_defined_shape_velocity(StateManager::newState(
+  // Construct and initialized the user-defined shape displacement to offset the computational mesh
+  FiniteElementState user_defined_shape_displacement(StateManager::newState(
       FiniteElementState::Options{.order = p, .vector_dim = dim, .name = "parameterized_shape"}));
 
-  double shape_velocity_value = 1.0;
+  double shape_displacement_value = 1.0;
 
-  user_defined_shape_velocity = shape_velocity_value;
+  user_defined_shape_displacement = shape_displacement_value;
 
   constexpr int SHAPE_FIELD = 0;
 
   // Construct a functional-based solid solver
   SolidFunctional<p, dim, SHAPE_FIELD, H1<p, dim>> solid_solver(default_static, GeometricNonlinearities::On,
                                                                 FinalMeshOption::Reference, "solid_functional",
-                                                                {user_defined_shape_velocity});
+                                                                {user_defined_shape_displacement});
 
   solid_util::NeoHookeanSolid<dim> mat(1.0, 1.0, 1.0);
   solid_solver.setMaterial(mat);
@@ -274,23 +274,23 @@ TEST(solid_functional_finite_diff, finite_difference_shape)
   // to check if computed qoi sensitivity is consistent
   // with finite difference on the displacement
   double eps = 1.0e-6;
-  for (int i = 0; i < user_defined_shape_velocity.gridFunc().Size(); ++i) {
+  for (int i = 0; i < user_defined_shape_displacement.gridFunc().Size(); ++i) {
     // Perturb the shape field
-    user_defined_shape_velocity.trueVec()(i) = shape_velocity_value + eps;
-    user_defined_shape_velocity.distributeSharedDofs();
+    user_defined_shape_displacement.trueVec()(i) = shape_displacement_value + eps;
+    user_defined_shape_displacement.distributeSharedDofs();
 
     solid_solver.advanceTimestep(dt);
     mfem::ParGridFunction displacement_plus = solid_solver.displacement().gridFunc();
 
-    user_defined_shape_velocity.trueVec()(i) = shape_velocity_value - eps;
-    user_defined_shape_velocity.distributeSharedDofs();
+    user_defined_shape_displacement.trueVec()(i) = shape_displacement_value - eps;
+    user_defined_shape_displacement.distributeSharedDofs();
 
     solid_solver.advanceTimestep(dt);
     mfem::ParGridFunction displacement_minus = solid_solver.displacement().gridFunc();
 
     // Reset to the original bulk modulus value
-    user_defined_shape_velocity.trueVec()(i) = shape_velocity_value;
-    user_defined_shape_velocity.distributeSharedDofs();
+    user_defined_shape_displacement.trueVec()(i) = shape_displacement_value;
+    user_defined_shape_displacement.distributeSharedDofs();
 
     // Finite difference to compute sensitivity of displacement with respect to bulk modulus
     mfem::ParGridFunction ddisp_dshape(&solid_solver.displacement().space());
