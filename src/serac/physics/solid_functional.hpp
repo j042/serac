@@ -111,7 +111,7 @@ struct ShapeHelper<solid_util::NO_SHAPE_PARAMETERIZATION, Ts...> {
  * @return The modified displacement containing the shape displacement term if appropriate.
  */
 template <int shape_index, typename... Ts>
-auto shape(const Ts... params)
+auto shape(Index<shape_index>, const Ts... params)
 {
   ShapeHelper<shape_index, Ts...> shape_helper;
   return shape_helper.value(params...);
@@ -376,7 +376,7 @@ public:
           // Determine the shape displacement and shape displacement gradient. If shape displacement
           // is not defined (shape_index == NO_SHAPE_PARAMETERIZATION), these values
           // will be zero
-          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
 
           auto source = zero{};
 
@@ -408,7 +408,7 @@ public:
         [this, parameterized_material](auto x, auto displacement, auto... params) {
           auto [u, du_dX] = displacement;
 
-          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate.
 
@@ -488,7 +488,7 @@ public:
           // Get the value and the gradient from the input tuple
           auto [u, du_dX] = displacement;
 
-          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate.
 
@@ -540,7 +540,7 @@ public:
     K_functional_->AddBoundaryIntegral(
         Dimension<dim - 1>{},
         [this, parameterized_traction](auto x, auto n, auto, auto... params) {
-          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
           return -1.0 * parameterized_traction(x + shape, n, time_, params...);
         },
         mesh_);
@@ -572,7 +572,7 @@ public:
     K_functional_->AddBoundaryIntegral(
         Dimension<dim - 1>{},
         [this, parameterized_pressure](auto x, auto n, auto, auto... params) {
-          auto [shape, dshape_dX] = serac::solid_util::shape<shape_index>(params...);
+          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
           return parameterized_pressure(x + shape, time_, params...) * n;
         },
         mesh_);
