@@ -376,7 +376,7 @@ public:
           // Determine the shape displacement and shape displacement gradient. If shape displacement
           // is not defined (shape_index == NO_SHAPE_PARAMETERIZATION), these values
           // will be zero
-          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
+          auto [p, dp_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
 
           auto source = zero{};
 
@@ -386,16 +386,16 @@ public:
           // configuration, u is the displacement, and p is the shape displacement. We need the gradient with
           // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
           // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
-          auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
+          auto du_dX_prime = dot(du_dX, inv(I_ + dp_dX));
 
-          auto response = parameterized_material(x + shape, u, du_dX_shape_mod, serac::get<0>(params)...);
+          auto response = parameterized_material(x + p, u, du_dX_prime, serac::get<0>(params)...);
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
           // This deformation gradient is the volumetric transform to get us back to the original
-          // reference configuration dx/dX = I + du/dX + dp/dX. If we are not including geometric
+          // reference configuration dx'/dX = I + du/dX + dp/dX. If we are not including geometric
           // nonlinearities, we ignore the du/dX factor.
-          auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
+          auto deformation_grad = geom_factor * du_dX + dp_dX + I_;
 
           auto flux = response.stress * inv(transpose(deformation_grad));
 
@@ -408,7 +408,7 @@ public:
         [this, parameterized_material](auto x, auto displacement, auto... params) {
           auto [u, du_dX] = displacement;
 
-          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
+          auto [p, dp_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate.
 
@@ -416,18 +416,18 @@ public:
           // configuration, u is the displacement, and p is the shape displacement. We need the gradient with
           // respect to the perturbed reference configuration X' = X + p for the material model. Therefore, we calculate
           // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
-          auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
+          auto du_dX_prime = dot(du_dX, inv(I_ + dp_dX));
 
-          auto response = parameterized_material(x + shape, u, du_dX_shape_mod, serac::get<0>(params)...);
+          auto response = parameterized_material(x + p, u, du_dX_prime, serac::get<0>(params)...);
 
           auto flux = 0.0 * du_dX;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
           // This deformation gradient is the volumetric transform to get us back to the original
-          // reference configuration dx/dX = I + du/dX + dp/dX. If we are not including geometric
+          // reference configuration dx'/dX = I + du/dX + dp/dX. If we are not including geometric
           // nonlinearities, we ignore the du/dX factor
-          auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
+          auto deformation_grad = geom_factor * du_dX + dp_dX + I_;
 
           auto source = response.density * u * det(deformation_grad);
 
@@ -488,7 +488,7 @@ public:
           // Get the value and the gradient from the input tuple
           auto [u, du_dX] = displacement;
 
-          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
+          auto [p, dp_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
 
           // Compute the displacement gradient with respect to the shape-adjusted coordinate.
 
@@ -496,18 +496,18 @@ public:
           // configuration, u is the displacement, and p is the shape displacement. We need the gradient with
           // respect to the perturbed reference configuration X' = X + p for the force model. Therefore, we calculate
           // du/dX' = du/dX * dX/dX' = du/dX * (dX'/dX)^-1 = du/dX * (I + dp/dX)^-1
-          auto du_dX_shape_mod = dot(du_dX, inv(I_ + dshape_dX));
+          auto du_dX_prime = dot(du_dX, inv(I_ + dp_dX));
 
           auto flux = du_dX * 0.0;
 
           double geom_factor = (geom_nonlin_ == GeometricNonlinearities::On ? 1.0 : 0.0);
 
           // This deformation gradient is the volumetric transform to get us back to the original
-          // reference configuration dx/dX = I + du/dX + dp/dX. If we are not including geometric
+          // reference configuration dx'/dX = I + du/dX + dp/dX. If we are not including geometric
           // nonlinearities, we ignore the du/dX factor
-          auto deformation_grad = geom_factor * du_dX + dshape_dX + I_;
+          auto deformation_grad = geom_factor * du_dX + dp_dX + I_;
 
-          auto source = parameterized_body_force(x + shape, time_, u, du_dX_shape_mod, serac::get<0>(params)...) *
+          auto source = parameterized_body_force(x + p, time_, u, du_dX_prime, serac::get<0>(params)...) *
                         (det(deformation_grad));
           return serac::tuple{source, flux};
         },
@@ -540,8 +540,8 @@ public:
     K_functional_->AddBoundaryIntegral(
         Dimension<dim - 1>{},
         [this, parameterized_traction](auto x, auto n, auto, auto... params) {
-          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
-          return -1.0 * parameterized_traction(x + shape, n, time_, params...);
+          auto [p, dp_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
+          return -1.0 * parameterized_traction(x + p, n, time_, params...);
         },
         mesh_);
   }
@@ -572,8 +572,8 @@ public:
     K_functional_->AddBoundaryIntegral(
         Dimension<dim - 1>{},
         [this, parameterized_pressure](auto x, auto n, auto, auto... params) {
-          auto [shape, dshape_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
-          return parameterized_pressure(x + shape, time_, params...) * n;
+          auto [p, dp_dX] = serac::solid_util::shape(Index<shape_index>{}, params...);
+          return parameterized_pressure(x + p, time_, params...) * n;
         },
         mesh_);
   }
