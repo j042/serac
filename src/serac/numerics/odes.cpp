@@ -92,8 +92,9 @@ void SecondOrderODE::Step(mfem::Vector& x, mfem::Vector& dxdt, double& time, dou
 
       auto constrained_dofs = bcs_.allEssentialTrueDofs();
       for (int i = 0; i < constrained_dofs.Size(); i++) {
-        x[i]    = U_[i];
-        dxdt[i] = (U_plus_[i] - U_minus_[i]) / (2.0 * epsilon);
+        const int j = constrained_dofs[i];
+        x[j]    = U_[j];
+        dxdt[j] = (U_plus_[j] - U_minus_[j]) / (2.0 * epsilon);
       }
     }
 
